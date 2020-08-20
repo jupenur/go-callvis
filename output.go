@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"go/build"
 	"go/types"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/jupenur/git-go/query"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 )
@@ -222,12 +224,21 @@ func printOutput(prog *ssa.Program, mainPkg *types.Package, cg *callgraph.Graph,
 
 			pkg, _ := build.Import(node.Func.Pkg.Pkg.Path(), "", 0)
 			// set node color
-			if isFocused {
-				attrs["fillcolor"] = "lightblue"
-			} else if pkg.Goroot {
+			if pkg.Goroot {
 				attrs["fillcolor"] = "#adedad"
 			} else {
-				attrs["fillcolor"] = "moccasin"
+				file := node.Func.Prog.Fset.File(node.Func.Pos())
+				if file != nil {
+					color, err := calculateFunctionColor(path.Dir(file.Name()), node.Func.Pkg.Pkg.Name(), label)
+					if err != nil {
+						fmt.Println(err)
+						attrs["fillcolor"] = "moccasin"
+					} else {
+						attrs["fillcolor"] = color
+					}
+				} else {
+					attrs["fillcolor"] = "moccasin"
+				}
 			}
 
 			// include pkg name
@@ -384,4 +395,21 @@ func printOutput(prog *ssa.Program, mainPkg *types.Package, cg *callgraph.Graph,
 	}
 
 	return buf.Bytes(), nil
+}
+
+func calculateFunctionColor(packagePath, packageName, identifier string) (string, error) {
+	options := &query.LookupOptions{
+		Path: fmt.Sprintf("%s:%s.%s", packagePath, packageName, identifier),
+	}
+	log, err := query.Log(options)
+	if err != nil {
+		return "", err
+	}
+	color := len(log)
+	color = color * 32
+	if color > 0x7F {
+		color = 0x7F
+	}
+	color = 0xFF - color
+	return fmt.Sprintf("#%02X%02X%02X", color, color, color), nil
 }
